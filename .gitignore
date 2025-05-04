@@ -1,0 +1,16 @@
+# Python byte-code
+__pycache__/
+*.py[cod]
+
+# Virtual env
+venv/
+
+# SQLite test DB
+cfguard.db
+
+# OS / editor stuff
+.DS_Store
+*.swp
+
+# Secrets / environment
+.env

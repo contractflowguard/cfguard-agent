@@ -11,7 +11,7 @@ import sqlite_utils
 
 # ───── конфигурация ───────────────────────────────────────────
 TOKEN   = os.environ["TG_TOKEN"]               # экспортируйте в shell
-API_URL = "http://127.0.0.1:8000"
+API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 DB      = sqlite_utils.Database("cfguard.db")
 
 def post_api(endpoint: str, payload: dict) -> bool:

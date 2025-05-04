@@ -1,4 +1,4 @@
-import os, asyncio, requests, socket
+import os, requests, socket, sqlite3
 import logging
 logging.basicConfig(level=logging.INFO)
 
@@ -12,7 +12,10 @@ import sqlite_utils
 # ───── конфигурация ───────────────────────────────────────────
 TOKEN   = os.environ["TG_TOKEN"]               # экспортируйте в shell
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
-DB      = sqlite_utils.Database("cfguard.db")
+DB_PATH = os.getenv("BOT_DB_PATH","cfguard.db")
+
+conn    = sqlite3.connect(DB_PATH, check_same_thread=False)
+DB      = sqlite_utils.Database(conn)
 
 def post_api(endpoint: str, payload: dict) -> bool:
     try:

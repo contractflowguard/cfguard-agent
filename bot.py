@@ -8,11 +8,16 @@ from telegram.ext import (
 )
 from datetime import datetime, UTC
 import sqlite_utils
+from dateutil.parser import parse as parse_dt
 
 # ───── конфигурация ───────────────────────────────────────────
 TOKEN   = os.environ["TG_TOKEN"]               # экспортируйте в shell
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 DB_PATH = os.getenv("BOT_DB_PATH","cfguard.db")
+# Ensure the directory for the bot database exists
+db_dir = os.path.dirname(DB_PATH)
+if db_dir and not os.path.exists(db_dir):
+    os.makedirs(db_dir, exist_ok=True)
 
 conn    = sqlite3.connect(DB_PATH, check_same_thread=False)
 DB      = sqlite_utils.Database(conn)
@@ -25,9 +30,10 @@ def post_api(endpoint: str, payload: dict) -> bool:
     except (requests.RequestException, socket.error):
         return False
 
-def write_local(task: str, event: str):
-    DB["log"].insert({"task": task, "event": event,
-                      "ts": datetime.now(UTC).isoformat()})
+def write_local(task: str, event: str, ts: str = None):
+    if ts is None:
+        ts = datetime.now(UTC).isoformat()
+    DB["log"].insert({"task": task, "event": event, "ts": ts})
 
 # ───── хэндлеры ────────────────────────────────────────────────
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -40,21 +46,37 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def starttask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not ctx.args:
-        await update.message.reply_text("Нужно: /starttask <ID>")
+        await update.message.reply_text("Нужно: /starttask <ID> [YYYY-mm-dd HH:MM]")
         return
     task = ctx.args[0]
-    if not post_api("start", {"task": task}):
-        write_local(task, "start")
-    await update.message.reply_text(f"▶ Start {task}")
+    ts = None
+    if len(ctx.args) > 1:
+        # combine all tokens after task as timestamp string
+        ts_str = " ".join(ctx.args[1:])
+        dt = parse_dt(ts_str)
+        # ensure tzinfo for correct ISO output
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        ts = dt.isoformat()
+    if not post_api("start", {"task": task, "ts": ts}):
+        write_local(task, "start", ts)
+    await update.message.reply_text(f"▶ Start {task} @ {ts or 'now'}")
 
 async def stoptask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not ctx.args:
-        await update.message.reply_text("Нужно: /stoptask <ID>")
+        await update.message.reply_text("Нужно: /stoptask <ID> [YYYY-mm-dd HH:MM]")
         return
     task = ctx.args[0]
-    if not post_api("stop", {"task": task}):
-        write_local(task, "stop")
-    await update.message.reply_text(f"■ Stop {task}")
+    ts = None
+    if len(ctx.args) > 1:
+        ts_str = " ".join(ctx.args[1:])
+        dt = parse_dt(ts_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        ts = dt.isoformat()
+    if not post_api("stop", {"task": task, "ts": ts}):
+        write_local(task, "stop", ts)
+    await update.message.reply_text(f"■ Stop  {task} @ {ts or 'now'}")
 
 async def report(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
@@ -81,4 +103,3 @@ if __name__ == "__main__":
         main()  # run_polling() handles its own loop
     except (KeyboardInterrupt, SystemExit):
         print("Bot stopped.")
-    

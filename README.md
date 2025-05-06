@@ -22,6 +22,8 @@ pip install -r requirements.txt
    API_URL=http://127.0.0.1:8000
    BOT_DB_PATH=./cfguard.db    # по умолчанию cfguard.db в рабочем каталоге
    ```
+   
+   При первом запуске бот автоматически создаст каталог для файла базы, указанного в `BOT_DB_PATH`, если такой каталог отсутствует.
 
 ## Запуск
 
@@ -33,6 +35,17 @@ python bot.py
 * `/starttask TASK‑ID [YYYY‑mm‑dd HH:MM]`
 * `/stoptask  TASK‑ID [YYYY‑mm‑dd HH:MM]`
 * `/report` — выводит задержки в минутах для каждой задачи.
+
+## Примеры использования
+
+```bash
+# Фиксация вехи с указанием времени
+/starttask DEMO-1 2025-05-10 14:32
+/stoptask  DEMO-1 2025-05-10 15:45
+
+# Получение отчёта
+/report
+```
 
 ## Лицензия
 

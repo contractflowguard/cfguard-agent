@@ -11,7 +11,10 @@ import sqlite_utils
 from dateutil.parser import parse as parse_dt
 
 # ───── конфигурация ───────────────────────────────────────────
-TOKEN   = os.environ["TG_TOKEN"]               # экспортируйте в shell
+# export TEST_TG_TOKEN (for CI smoke tests) or TG_TOKEN (for production) in environment
+TOKEN = os.environ.get("TEST_TG_TOKEN") or os.environ.get("TG_TOKEN")
+if not TOKEN:
+    raise RuntimeError("Bot token is not set. Please set TEST_TG_TOKEN or TG_TOKEN.")
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 DB_PATH = os.getenv("BOT_DB_PATH","cfguard.db")
 # Ensure the directory for the bot database exists

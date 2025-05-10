@@ -1,5 +1,6 @@
 import os, requests, socket, sqlite3
 import logging
+import asyncio
 logging.basicConfig(level=logging.INFO)
 
 from telegram import Update
@@ -94,15 +95,26 @@ async def report(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # ───── запуск ─────────────────────────────────────────────────
 def main():
+    """Run the Telegram bot with graceful shutdown."""
+    # Build application
     app = ApplicationBuilder().token(TOKEN).build()
+
+    # Register handlers
     app.add_handler(CommandHandler("start",      cmd_start))
     app.add_handler(CommandHandler("starttask",  starttask))
     app.add_handler(CommandHandler("stoptask",   stoptask))
     app.add_handler(CommandHandler("report",     report))
-    app.run_polling()
+
+    try:
+        # run_polling without internal signal handlers
+        app.run_polling(stop_signals=None)
+    finally:
+        # Ensure all async cleanup completes to avoid 'coroutine was never awaited'
+        asyncio.run(app.shutdown())
+        print("Bot stopped.")
 
 if __name__ == "__main__":
     try:
-        main()  # run_polling() handles its own loop
+        main()
     except (KeyboardInterrupt, SystemExit):
-        print("Bot stopped.")
+        pass

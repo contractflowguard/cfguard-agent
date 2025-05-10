@@ -82,9 +82,9 @@ async def stoptask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         write_local(task, "stop", ts)
     await update.message.reply_text(f"■ Stop  {task} @ {ts or 'now'}")
 
-async def report(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def elapsed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
-        data = requests.get(f"{API_URL}/report", timeout=1).json()
+        data = requests.get(f"{API_URL}/elapsed", timeout=1).json()
     except (requests.RequestException, ValueError):
         data = list(DB.query("SELECT task, 0.0 AS minutes FROM log GROUP BY task"))
     if not data:
@@ -103,7 +103,7 @@ def main():
     app.add_handler(CommandHandler("start",      cmd_start))
     app.add_handler(CommandHandler("starttask",  starttask))
     app.add_handler(CommandHandler("stoptask",   stoptask))
-    app.add_handler(CommandHandler("report",     report))
+    app.add_handler(CommandHandler("elapsed",     elapsed))
 
     try:
         # run_polling without internal signal handlers

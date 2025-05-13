@@ -3,6 +3,9 @@ import logging
 import asyncio
 logging.basicConfig(level=logging.INFO)
 
+# ───── импорты и состояние ───────────────────────────────────────────
+pending_imports: dict[int, str] = {}
+
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes
@@ -36,11 +39,11 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/starttask <ID> [YYYY‑mm‑dd HH:MM] — начать задачу\n"
         "/stoptask <ID> [YYYY‑mm‑dd HH:MM] — остановить задачу\n"
         "/elapsed — показать отчёт с накопленным временем (минуты)\n"
-        "/import <project_name> — импорт плана (пришлите CSV/XLSX)\n"
+        "/import <project_name> — инициировать импорт проекта\n"
         "/report <project_name> [table|html] — получить отчёт по проекту\n"
-        "/list — вывести список доступных проектов\n"
+        "/list — список доступных проектов\n"
         "/reset — сбросить все данные в базе\n"
-        "/help — подробная справка по формату файла"
+        "/help — подробная справка"
     )
 
 async def starttask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -92,28 +95,14 @@ async def elapsed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 async def cmd_import(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    # /import <project_name>  (attach a CSV or XLSX file)
-    # Expect a project name argument and an attached file
-    if not ctx.args or not update.message.document:
-        await update.message.reply_text(
-            "Использование: /import <project_name> (приложите файл CSV или XLSX)"
-        )
+    if not ctx.args:
+        await update.message.reply_text("Использование: /import <project_name>")
         return
     project = ctx.args[0]
-    # Download the attached file
-    file_obj = await update.message.document.get_file()
-    content = await file_obj.download_as_bytearray()
-    # Prepare multipart form-data
-    files = {"file": (update.message.document.file_name, content)}
-    data = {"name": project}
-    try:
-        resp = requests.post(f"{API_URL}/import", files=files, data=data, timeout=10)
-        resp.raise_for_status()
-        result = resp.json()
-        count = result.get("imported", "?")
-        await update.message.reply_text(f"✔ Imported {count} tasks into project '{project}'")
-    except requests.RequestException:
-        await update.message.reply_text("Ошибка: не удалось импортировать данные на сервере.")
+    pending_imports[update.effective_chat.id] = project
+    await update.message.reply_text(
+        f"Ок, жду CSV или XLSX файл для проекта '{project}'. Пришлите файл отдельным сообщением."
+    )
 
 async def cmd_report(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # /report <project_name> [table|html]
@@ -159,26 +148,52 @@ async def cmd_reset(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = (
-        "Полная справка по командам:\n"
+        "Подробная справка по командам:\n"
         "/starttask <ID> [YYYY‑mm‑dd HH:MM] — начать задачу (по умолчанию сейчас)\n"
-        "/stoptask  <ID> [YYYY‑mm‑dd HH:MM] — остановить задачу (по умолчанию сейчас)\n"
-        "/elapsed — показать отчёт с накопленным временем (в минутах)\n"
-        "/import <project_name> — импорт плана: приложите CSV или XLSX файл\n"
-        "/report <project_name> [table|html] — получить отчёт по проекту в текстовом или HTML формате\n"
-        "/list — вывести список доступных проектов\n"
+        "/stoptask <ID> [YYYY‑mm‑dd HH:MM] — остановить задачу (по умолчанию сейчас)\n"
+        "/elapsed — показать отчёт с накопленным временем (минуты)\n"
+        "/import <project_name> — инициировать многошаговый импорт\n"
+        "   1. Отправьте `/import <project_name>`\n"
+        "   2. Затем пришлите CSV или XLSX файл\n"
+        "/report <project_name> [table|html] — получить отчёт по проекту\n"
+        "/list — список доступных проектов\n"
         "/reset — сбросить все данные в базе\n"
         "/help — показать эту справку\n\n"
-        "Формат файла для /import:\n"
-        "  • id — уникальный номер задачи (integer)\n"
-        "  • task — название задачи (string)\n"
-        "  • planned_deadline — плановая дата завершения (YYYY-MM-DD)\n"
-        "  • actual_completion_date — фактическая дата завершения (YYYY-MM-DD, опционально)\n"
-        "  • dependencies — id зависимостей через запятую (optional)\n"
-        "  • status — статус задачи, например 'in_progress', 'done' (optional)\n\n"
-        "Пример CSV-строки:\n"
-        "1,Design,2025-06-01,2025-06-03,,in_progress\n"
+        "Формат файла (CSV/XLSX):\n"
+        "  • id — уникальный идентификатор задачи\n"
+        "  • task — название задачи\n"
+        "  • planned_deadline — плановая дата завершения (YYYY‑MM‑DD)\n"
+        "  • actual_completion_date — фактическая дата завершения (опционально)\n"
+        "  • dependencies — список зависимостей через запятую\n"
+        "  • status — текущий статус задачи (опционально)\n"
     )
     await update.message.reply_text(text)
+
+from telegram.ext import MessageHandler, filters
+
+async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    if chat_id not in pending_imports:
+        return  # ignore
+    project = pending_imports.pop(chat_id)
+    try:
+        file_obj = await update.message.document.get_file()
+        content = await file_obj.download_as_bytearray()
+    except Exception:
+        logging.exception("Ошибка при получении файла")
+        await update.message.reply_text("Ошибка: не удалось получить файл")
+        return
+    files = {"file": (update.message.document.file_name, content)}
+    data = {"name": project}
+    try:
+        resp = requests.post(f"{API_URL}/import", files=files, data=data, timeout=10)
+        resp.raise_for_status()
+        result = resp.json()
+        count = result.get("imported", '?')
+        await update.message.reply_text(f"✔ Imported {count} tasks into project '{project}'")
+    except requests.RequestException:
+        logging.exception("Ошибка при импорте")
+        await update.message.reply_text("Ошибка: не удалось импортировать данные на сервере.")
 
 # ───── запуск ─────────────────────────────────────────────────
 def main():
@@ -196,6 +211,7 @@ def main():
     app.add_handler(CommandHandler("list",     cmd_list))
     app.add_handler(CommandHandler("reset",    cmd_reset))
     app.add_handler(CommandHandler("help",     cmd_help))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
     try:
         # run_polling without internal signal handlers

@@ -50,10 +50,16 @@ python bot.py
 /elapsed
 ```
 
-Бот теперь умеет принимать план-файл в команде /import. Отправьте сообщение:
-/import my-project
-приложив CSV или XLSX файл с колонками:
-`id`, `task`, `planned_deadline`, `actual_completion_date` (опц.), `dependencies`, `status` (опц.).
+Бот теперь поддерживает многошаговый импорт:
+1. Отправьте команду `/import <project_name>`
+2. Затем в отдельном сообщении приложите CSV или XLSX файл с колонками:
+   `id`, `task`, `planned_deadline`, `actual_completion_date` (опц.), `dependencies`, `status` (опц.).
+
+Пример:
+```
+/import udacha
+```
+(потом отправьте файл `udacha.csv`)
 
 ## Формат файла
 

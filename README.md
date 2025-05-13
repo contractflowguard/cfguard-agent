@@ -7,7 +7,7 @@
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.lock
 ```
 
 ## Настройка
@@ -20,10 +20,7 @@ pip install -r requirements.txt
    ```env
    TG_TOKEN="123456:ABCDEF…"
    API_URL=http://127.0.0.1:8000
-   BOT_DB_PATH=./cfguard.db    # по умолчанию cfguard.db в рабочем каталоге
    ```
-   
-   При первом запуске бот автоматически создаст каталог для файла базы, указанного в `BOT_DB_PATH`, если такой каталог отсутствует.
 
 ## Запуск
 
@@ -32,9 +29,9 @@ python bot.py
 ```
 
 Команды:
-* `/starttask TASK‑ID [YYYY‑mm‑dd HH:MM]`
-* `/stoptask  TASK‑ID [YYYY‑mm‑dd HH:MM]`
-* `/report` — выводит задержки в минутах для каждой задачи.
+* `/starttask TASK‑ID [YYYY‑mm‑dd HH:MM]` — начать задачу
+* `/stoptask TASK‑ID [YYYY‑mm‑dd HH:MM]` — остановить задачу
+* `/elapsed` — вывести отчёт с задержками (минуты)
 
 ## Примеры использования
 
@@ -44,7 +41,7 @@ python bot.py
 /stoptask  DEMO-1 2025-05-10 15:45
 
 # Получение отчёта
-/report
+/elapsed
 ```
 
 ## Лицензия

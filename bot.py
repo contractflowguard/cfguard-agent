@@ -3,6 +3,9 @@ import logging
 import asyncio
 logging.basicConfig(level=logging.INFO)
 
+# ───── импорты и состояние ───────────────────────────────────────────
+pending_imports: dict[int, str] = {}
+
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes
@@ -35,7 +38,12 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "Команды:\n"
         "/starttask <ID> [YYYY‑mm‑dd HH:MM] — начать задачу\n"
         "/stoptask <ID> [YYYY‑mm‑dd HH:MM] — остановить задачу\n"
-        "/elapsed — показать отчёт с накопленным временем (минуты)"
+        "/elapsed — показать отчёт с накопленным временем (минуты)\n"
+        "/import <project_name> — инициировать импорт проекта\n"
+        "/report <project_name> [table|html] — получить отчёт по проекту\n"
+        "/list — список доступных проектов\n"
+        "/reset — сбросить все данные в базе\n"
+        "/help — подробная справка"
     )
 
 async def starttask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -86,6 +94,107 @@ async def elapsed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = "\n".join(f"{row['task']:<12} {row['minutes']:>6}" for row in data)
     await update.message.reply_text(text)
 
+async def cmd_import(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not ctx.args:
+        await update.message.reply_text("Использование: /import <project_name>")
+        return
+    project = ctx.args[0]
+    pending_imports[update.effective_chat.id] = project
+    await update.message.reply_text(
+        f"Ок, жду CSV или XLSX файл для проекта '{project}'. Пришлите файл отдельным сообщением."
+    )
+
+async def cmd_report(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    # /report <project_name> [table|html]
+    if not ctx.args:
+        await update.message.reply_text("Использование: /report <project_name> [format]")
+        return
+    project = ctx.args[0]
+    fmt = ctx.args[1] if len(ctx.args) > 1 else "table"
+    try:
+        resp = requests.get(f"{API_URL}/report", params={"project": project, "format": fmt}, timeout=5)
+        resp.raise_for_status()
+        report_text = resp.json().get("report", "")
+        # if HTML and telegram supports, send as raw; else markdown
+        if fmt.lower() == "html":
+            await update.message.reply_text(report_text, parse_mode=None)
+        else:
+            await update.message.reply_text(f"```\n{report_text}\n```", parse_mode="Markdown")
+    except requests.RequestException:
+        await update.message.reply_text("Ошибка: не удалось получить отчёт от сервера.")
+
+async def cmd_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    # /list
+    try:
+        resp = requests.get(f"{API_URL}/projects", timeout=5)
+        resp.raise_for_status()
+        names = resp.json().get("projects", [])
+        if not names:
+            text = "Проекты не найдены."
+        else:
+            text = "\n".join(names)
+        await update.message.reply_text(text)
+    except requests.RequestException:
+        await update.message.reply_text("Ошибка: не удалось получить список проектов.")
+
+async def cmd_reset(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    # /reset
+    try:
+        resp = requests.post(f"{API_URL}/reset", json={"force": True}, timeout=5)
+        resp.raise_for_status()
+        await update.message.reply_text("✔ Database reset")
+    except requests.RequestException:
+        await update.message.reply_text("Ошибка: не удалось сбросить базу данных.")
+
+async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    text = (
+        "Подробная справка по командам:\n"
+        "/starttask <ID> [YYYY‑mm‑dd HH:MM] — начать задачу (по умолчанию сейчас)\n"
+        "/stoptask <ID> [YYYY‑mm‑dd HH:MM] — остановить задачу (по умолчанию сейчас)\n"
+        "/elapsed — показать отчёт с накопленным временем (минуты)\n"
+        "/import <project_name> — инициировать многошаговый импорт\n"
+        "   1. Отправьте `/import <project_name>`\n"
+        "   2. Затем пришлите CSV или XLSX файл\n"
+        "/report <project_name> [table|html] — получить отчёт по проекту\n"
+        "/list — список доступных проектов\n"
+        "/reset — сбросить все данные в базе\n"
+        "/help — показать эту справку\n\n"
+        "Формат файла (CSV/XLSX):\n"
+        "  • id — уникальный идентификатор задачи\n"
+        "  • task — название задачи\n"
+        "  • planned_deadline — плановая дата завершения (YYYY‑MM‑DD)\n"
+        "  • actual_completion_date — фактическая дата завершения (опционально)\n"
+        "  • dependencies — список зависимостей через запятую\n"
+        "  • status — текущий статус задачи (опционально)\n"
+    )
+    await update.message.reply_text(text)
+
+from telegram.ext import MessageHandler, filters
+
+async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    if chat_id not in pending_imports:
+        return  # ignore
+    project = pending_imports.pop(chat_id)
+    try:
+        file_obj = await update.message.document.get_file()
+        content = await file_obj.download_as_bytearray()
+    except Exception:
+        logging.exception("Ошибка при получении файла")
+        await update.message.reply_text("Ошибка: не удалось получить файл")
+        return
+    files = {"file": (update.message.document.file_name, content)}
+    data = {"name": project}
+    try:
+        resp = requests.post(f"{API_URL}/import", files=files, data=data, timeout=10)
+        resp.raise_for_status()
+        result = resp.json()
+        count = result.get("imported", '?')
+        await update.message.reply_text(f"✔ Imported {count} tasks into project '{project}'")
+    except requests.RequestException:
+        logging.exception("Ошибка при импорте")
+        await update.message.reply_text("Ошибка: не удалось импортировать данные на сервере.")
+
 # ───── запуск ─────────────────────────────────────────────────
 def main():
     """Run the Telegram bot with graceful shutdown."""
@@ -97,6 +206,12 @@ def main():
     app.add_handler(CommandHandler("starttask",  starttask))
     app.add_handler(CommandHandler("stoptask",   stoptask))
     app.add_handler(CommandHandler("elapsed",     elapsed))
+    app.add_handler(CommandHandler("import",   cmd_import))
+    app.add_handler(CommandHandler("report",   cmd_report))
+    app.add_handler(CommandHandler("list",     cmd_list))
+    app.add_handler(CommandHandler("reset",    cmd_reset))
+    app.add_handler(CommandHandler("help",     cmd_help))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
     try:
         # run_polling without internal signal handlers

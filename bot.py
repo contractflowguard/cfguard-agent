@@ -1,4 +1,4 @@
-import os, requests, socket, sqlite3
+import os, requests, socket
 import logging
 import asyncio
 logging.basicConfig(level=logging.INFO)
@@ -8,7 +8,6 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes
 )
 from datetime import datetime, UTC
-import sqlite_utils
 from dateutil.parser import parse as parse_dt
 
 # ───── конфигурация ───────────────────────────────────────────
@@ -17,35 +16,26 @@ TOKEN = os.environ.get("TEST_TG_TOKEN") or os.environ.get("TG_TOKEN")
 if not TOKEN:
     raise RuntimeError("Bot token is not set. Please set TEST_TG_TOKEN or TG_TOKEN.")
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
-DB_PATH = os.getenv("BOT_DB_PATH","cfguard.db")
-# Ensure the directory for the bot database exists
-db_dir = os.path.dirname(DB_PATH)
-if db_dir and not os.path.exists(db_dir):
-    os.makedirs(db_dir, exist_ok=True)
-
-conn    = sqlite3.connect(DB_PATH, check_same_thread=False)
-DB      = sqlite_utils.Database(conn)
 
 def post_api(endpoint: str, payload: dict) -> bool:
+    """
+    Helper to POST to the backend API.
+    Returns True on HTTP 2xx, False on any exception or non-2xx response.
+    """
     try:
         r = requests.post(f"{API_URL}/{endpoint}", json=payload, timeout=1)
         r.raise_for_status()
         return True
-    except (requests.RequestException, socket.error):
+    except requests.RequestException:
         return False
-
-def write_local(task: str, event: str, ts: str = None):
-    if ts is None:
-        ts = datetime.now(UTC).isoformat()
-    DB["log"].insert({"task": task, "event": event, "ts": ts})
 
 # ───── хэндлеры ────────────────────────────────────────────────
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Команды:\n"
-        "/starttask <ID>\n"
-        "/stoptask <ID>\n"
-        "/report"
+        "/starttask <ID> [YYYY‑mm‑dd HH:MM] — начать задачу\n"
+        "/stoptask <ID> [YYYY‑mm‑dd HH:MM] — остановить задачу\n"
+        "/elapsed — показать отчёт с накопленным временем (минуты)"
     )
 
 async def starttask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -63,7 +53,8 @@ async def starttask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             dt = dt.replace(tzinfo=UTC)
         ts = dt.isoformat()
     if not post_api("start", {"task": task, "ts": ts}):
-        write_local(task, "start", ts)
+        await update.message.reply_text("Ошибка: не удалось сохранить событие на сервере.")
+        return
     await update.message.reply_text(f"▶ Start {task} @ {ts or 'now'}")
 
 async def stoptask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -79,14 +70,16 @@ async def stoptask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             dt = dt.replace(tzinfo=UTC)
         ts = dt.isoformat()
     if not post_api("stop", {"task": task, "ts": ts}):
-        write_local(task, "stop", ts)
+        await update.message.reply_text("Ошибка: не удалось сохранить событие на сервере.")
+        return
     await update.message.reply_text(f"■ Stop  {task} @ {ts or 'now'}")
 
 async def elapsed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         data = requests.get(f"{API_URL}/elapsed", timeout=1).json()
     except (requests.RequestException, ValueError):
-        data = list(DB.query("SELECT task, 0.0 AS minutes FROM log GROUP BY task"))
+        await update.message.reply_text("Ошибка: не удалось получить отчёт от сервера.")
+        return
     if not data:
         await update.message.reply_text("Пока пусто")
         return

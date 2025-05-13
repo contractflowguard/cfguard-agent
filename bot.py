@@ -36,6 +36,10 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/starttask <ID> [YYYY‑mm‑dd HH:MM] — начать задачу\n"
         "/stoptask <ID> [YYYY‑mm‑dd HH:MM] — остановить задачу\n"
         "/elapsed — показать отчёт с накопленным временем (минуты)\n"
+        "/import <project_name> — импорт плана (пришлите CSV/XLSX)\n"
+        "/report <project_name> [table|html] — получить отчёт по проекту\n"
+        "/list — вывести список доступных проектов\n"
+        "/reset — сбросить все данные в базе\n"
         "/help — подробная справка по формату файла"
     )
 
@@ -155,18 +159,24 @@ async def cmd_reset(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = (
-        "Бот понимает планы в формате CSV или XLSX с колонками:\n"
-        "  • id — уникальный номер задачи\n"
-        "  • task — название задачи\n"
-        "  • planned_deadline — дата завершения по плану (YYYY-MM-DD)\n"
-        "  • actual_completion_date — фактическая дата завершения (опционально)\n"
-        "  • dependencies — через запятую id зависимостей\n"
-        "  • status — статус задачи (опционально)\n\n"
-        "Пример CSV:\n"
-        "id,task,planned_deadline,actual_completion_date,dependencies,status\n"
-        "1,Design,2025-06-01,, ,in_progress\n"
-        "2,Build,2025-07-15,2025-07-20,1,done\n\n"
-        "Используйте `/import <project_name>` и приложите файл."
+        "Полная справка по командам:\n"
+        "/starttask <ID> [YYYY‑mm‑dd HH:MM] — начать задачу (по умолчанию сейчас)\n"
+        "/stoptask  <ID> [YYYY‑mm‑dd HH:MM] — остановить задачу (по умолчанию сейчас)\n"
+        "/elapsed — показать отчёт с накопленным временем (в минутах)\n"
+        "/import <project_name> — импорт плана: приложите CSV или XLSX файл\n"
+        "/report <project_name> [table|html] — получить отчёт по проекту в текстовом или HTML формате\n"
+        "/list — вывести список доступных проектов\n"
+        "/reset — сбросить все данные в базе\n"
+        "/help — показать эту справку\n\n"
+        "Формат файла для /import:\n"
+        "  • id — уникальный номер задачи (integer)\n"
+        "  • task — название задачи (string)\n"
+        "  • planned_deadline — плановая дата завершения (YYYY-MM-DD)\n"
+        "  • actual_completion_date — фактическая дата завершения (YYYY-MM-DD, опционально)\n"
+        "  • dependencies — id зависимостей через запятую (optional)\n"
+        "  • status — статус задачи, например 'in_progress', 'done' (optional)\n\n"
+        "Пример CSV-строки:\n"
+        "1,Design,2025-06-01,2025-06-03,,in_progress\n"
     )
     await update.message.reply_text(text)
 

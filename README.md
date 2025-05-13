@@ -29,15 +29,15 @@ python bot.py
 ```
 
 Команды:
-* `/start` — показать список команд
+* `/start` — краткая справка о возможностях бота
 * `/starttask <ID> [YYYY‑mm‑dd HH:MM]` — начать задачу
 * `/stoptask <ID> [YYYY‑mm‑dd HH:MM]` — остановить задачу
-* `/elapsed` — показать отчёт с накопленным временем (минуты)
-* `/import <project_name>` — импорт плана: приложите CSV или XLSX
+* `/elapsed` — показать отчёт с накопленным временем (в минутах)
+* `/import <project_name>` — импорт плана проекта: приложите CSV или XLSX файл
 * `/report <project_name> [table|html]` — получить отчёт по проекту
-* `/list` — вывести список доступных проектов
-* `/reset` — сбросить все данные в базе
-* `/help` — подробная справка по формату файла
+* `/list` — список доступных проектов
+* `/reset` — сброс базы данных
+* `/help` — подробная справка по структуре файла
 
 ## Примеры использования
 
@@ -52,7 +52,25 @@ python bot.py
 
 Бот теперь умеет принимать план-файл в команде /import. Отправьте сообщение:
 /import my-project
-приложив CSV или XLSX файл с колонками id, task, planned_deadline, actual_completion_date, dependencies, status.
+приложив CSV или XLSX файл с колонками:
+`id`, `task`, `planned_deadline`, `actual_completion_date` (опц.), `dependencies`, `status` (опц.).
+
+## Формат файла
+
+CSV или XLSX с колонками:
+- `id` — уникальный идентификатор задачи
+- `task` — название задачи
+- `planned_deadline` — плановая дата завершения (в формате YYYY‑MM‑DD)
+- `actual_completion_date` — фактическая дата завершения (опционально)
+- `dependencies` — список зависимостей, через запятую
+- `status` — текущий статус задачи (опционально)
+
+Пример CSV:
+```
+id,task,planned_deadline,actual_completion_date,dependencies,status  
+1,Design,2025-06-01,, ,in_progress  
+2,Build,2025-07-15,2025-07-20,1,done
+```
 
 ## Лицензия
 

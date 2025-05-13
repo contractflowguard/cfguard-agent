@@ -16,7 +16,7 @@ pip install -r requirements.lock
    ```bash
    cp .env.example .env
    ```
-2. Откройте `.env` и укажите:
+2. Откройте `.env` и укажите необходимые переменные, например:
    ```env
    TG_TOKEN="123456:ABCDEF…"
    API_URL=http://127.0.0.1:8000
@@ -29,9 +29,15 @@ python bot.py
 ```
 
 Команды:
-* `/starttask TASK‑ID [YYYY‑mm‑dd HH:MM]` — начать задачу
-* `/stoptask TASK‑ID [YYYY‑mm‑dd HH:MM]` — остановить задачу
-* `/elapsed` — вывести отчёт с задержками (минуты)
+* `/start` — показать список команд
+* `/starttask <ID> [YYYY‑mm‑dd HH:MM]` — начать задачу
+* `/stoptask <ID> [YYYY‑mm‑dd HH:MM]` — остановить задачу
+* `/elapsed` — показать отчёт с накопленным временем (минуты)
+* `/import <project_name>` — импорт плана: приложите CSV или XLSX
+* `/report <project_name> [table|html]` — получить отчёт по проекту
+* `/list` — вывести список доступных проектов
+* `/reset` — сбросить все данные в базе
+* `/help` — подробная справка по формату файла
 
 ## Примеры использования
 
@@ -43,6 +49,10 @@ python bot.py
 # Получение отчёта
 /elapsed
 ```
+
+Бот теперь умеет принимать план-файл в команде /import. Отправьте сообщение:
+/import my-project
+приложив CSV или XLSX файл с колонками id, task, planned_deadline, actual_completion_date, dependencies, status.
 
 ## Лицензия
 

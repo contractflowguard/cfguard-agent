@@ -34,7 +34,9 @@ python bot.py
 * `/stoptask <ID> [YYYY‑mm‑dd HH:MM]` — остановить задачу
 * `/elapsed` — показать отчёт с накопленным временем (в минутах)
 * `/import <project_name>` — импорт плана проекта: приложите CSV или XLSX файл
-* `/report <project_name> [table|html]` — получить отчёт по проекту
+* `/report <project_name> [table|html]` — отчёт по проекту  
+  *table* → прикрепляется как `.txt`‑файл;  
+  *html*  → прикрепляется как `.html`‑файл.
 * `/list` — список доступных проектов
 * `/reset` — сброс базы данных
 * `/help` — подробная справка по структуре файла
@@ -50,32 +52,45 @@ python bot.py
 /elapsed
 ```
 
+```bash
+# Табличный отчёт (придёт файлом)
+/report DEMO table
+
+# Полный HTML‑отчёт (придёт файлом)
+/report DEMO html
+```
+
 Бот теперь поддерживает многошаговый импорт:
 1. Отправьте команду `/import <project_name>`
 2. Затем в отдельном сообщении приложите CSV или XLSX файл с колонками:
-   `id`, `task`, `planned_deadline`, `actual_completion_date` (опц.), `dependencies`, `status` (опц.).
+   `project`, `task_id`, `summary`, `planned_deadline`, `actual_completion_date`, `duration_days`, `deps`, `assignee`, `description`, `result`, `status`.
 
 Пример:
 ```
 /import udacha
 ```
-(потом отправьте файл `udacha.csv`)
+(потом отправьте файл `udacha_plan.csv`)
 
 ## Формат файла
 
 CSV или XLSX с колонками:
-- `id` — уникальный идентификатор задачи
-- `task` — название задачи
+- `project` — код/имя проекта
+- `task_id` — уникальный идентификатор задачи
+- `summary` — краткое описание задачи
 - `planned_deadline` — плановая дата завершения (в формате YYYY‑MM‑DD)
 - `actual_completion_date` — фактическая дата завершения (опционально)
-- `dependencies` — список зависимостей, через запятую
-- `status` — текущий статус задачи (опционально)
+- `duration_days` — продолжительность (дни, опционально)
+- `deps` — зависимости (id через запятую, опционально)
+- `assignee` — исполнитель (опционально)
+- `description` — описание (опционально)
+- `result` — результат выполнения (опционально)
+- `status` — статус задачи (опционально)
 
 Пример CSV:
 ```
-id,task,planned_deadline,actual_completion_date,dependencies,status  
-1,Design,2025-06-01,, ,in_progress  
-2,Build,2025-07-15,2025-07-20,1,done
+project,task_id,summary,planned_deadline,actual_completion_date,duration_days,deps,assignee,description,result,status
+udacha,1,Design,2025-06-01,,,,"",,"",,"in_progress"
+udacha,2,Build,2025-07-15,2025-07-20,,,1,,"",,"done"
 ```
 
 ## Лицензия

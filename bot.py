@@ -113,15 +113,31 @@ async def cmd_report(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     fmt = ctx.args[1] if len(ctx.args) > 1 else "table"
     try:
         resp = requests.get(f"{API_URL}/report", params={"project": project, "format": fmt}, timeout=5)
+        print(resp.status_code, resp.text)
         resp.raise_for_status()
         report_text = resp.json().get("report", "")
-        # if HTML and telegram supports, send as raw; else markdown
-        if fmt.lower() == "html":
-            await update.message.reply_text(report_text, parse_mode=None)
-        else:
-            await update.message.reply_text(f"```\n{report_text}\n```", parse_mode="Markdown")
+        import tempfile
+        # For both HTML and table formats we send the report as a file
+        if fmt.lower() in ("html", "table"):
+            suffix = ".html" if fmt.lower() == "html" else ".txt"
+            with tempfile.NamedTemporaryFile("w+", delete=False, suffix=suffix) as f:
+                f.write(report_text)
+                f.flush()
+                f.seek(0)
+                await update.message.reply_document(
+                    document=f.name,
+                    filename=f"{project}_report{suffix}"
+                )
+            return  # nothing more to do
+        # fallback for other formats: send as chunked Markdown text
+        max_len = 4000
+        chunks = [report_text[i:i+max_len] for i in range(0, len(report_text), max_len)]
+        for part in chunks:
+            await update.message.reply_text(f"```\n{part}\n```", parse_mode="Markdown")
     except requests.RequestException:
         await update.message.reply_text("Ошибка: не удалось получить отчёт от сервера.")
+    except Exception as ex:
+        await update.message.reply_text(f"Ошибка отправки отчёта: {ex}")
 
 async def cmd_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # /list
@@ -156,16 +172,23 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "   1. Отправьте `/import <project_name>`\n"
         "   2. Затем пришлите CSV или XLSX файл\n"
         "/report <project_name> [table|html] — получить отчёт по проекту\n"
+        "  • table — табличный вид (длинные отчёты разбиваются на части)\n"
+        "  • html — подробный отчёт в html-файле\n"
         "/list — список доступных проектов\n"
         "/reset — сбросить все данные в базе\n"
         "/help — показать эту справку\n\n"
         "Формат файла (CSV/XLSX):\n"
-        "  • id — уникальный идентификатор задачи\n"
-        "  • task — название задачи\n"
-        "  • planned_deadline — плановая дата завершения (YYYY‑MM‑DD)\n"
+        "  • project — код/имя проекта\n"
+        "  • task_id — уникальный идентификатор задачи\n"
+        "  • summary — краткое описание задачи\n"
+        "  • planned_deadline — плановая дата завершения (YYYY-MM-DD)\n"
         "  • actual_completion_date — фактическая дата завершения (опционально)\n"
-        "  • dependencies — список зависимостей через запятую\n"
-        "  • status — текущий статус задачи (опционально)\n"
+        "  • duration_days — продолжительность (дни, опционально)\n"
+        "  • deps — зависимости (id через запятую, опционально)\n"
+        "  • assignee — исполнитель (опционально)\n"
+        "  • description — описание (опционально)\n"
+        "  • result — результат выполнения (опционально)\n"
+        "  • status — статус задачи (опционально)\n"
     )
     await update.message.reply_text(text)
 

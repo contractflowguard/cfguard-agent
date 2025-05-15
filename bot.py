@@ -115,8 +115,21 @@ async def cmd_report(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         resp = requests.get(f"{API_URL}/report", params={"project": project, "format": fmt}, timeout=5)
         print(resp.status_code, resp.text)
         resp.raise_for_status()
-        report_text = resp.json().get("report", "")
         import tempfile
+        if fmt.lower() == "json":
+            import json
+            records = resp.json().get("records", [])
+            json_text = json.dumps(records, indent=2, ensure_ascii=False)
+            with tempfile.NamedTemporaryFile("w+", delete=False, suffix=".json") as f:
+                f.write(json_text)
+                f.flush()
+                f.seek(0)
+                await update.message.reply_document(
+                    document=f.name,
+                    filename=f"{project}_report.json"
+                )
+            return
+        report_text = resp.json().get("report", "")
         # For both HTML and table formats we send the report as a file
         if fmt.lower() in ("html", "table"):
             suffix = ".html" if fmt.lower() == "html" else ".txt"
@@ -171,9 +184,10 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/import <project_name> — инициировать импорт проекта\n"
         "   1. Отправьте `/import <project_name>`\n"
         "   2. Затем пришлите CSV или XLSX файл с задачами\n"
-        "/report <project_name> [table|html] — получить отчёт по проекту\n"
+        "/report <project_name> [table|html|json] — получить отчёт по проекту\n"
         "  • table — табличный отчёт придёт как .txt‑файл\n"
         "  • html — подробный отчёт придёт как .html‑файл\n"
+        "  • json — отчёт в формате JSON с дельтой и статусом для каждой задачи (придёт .json‑файлом)\n"
         "/list — список доступных проектов\n"
         "/reset — сбросить все данные в базе\n"
         "/help — показать эту справку\n\n"
@@ -192,8 +206,9 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "\n"
         "Примеры:\n"
         "  /import myproj — инициировать импорт задач\n"
-        "  /report myproj table — табличный отчёт (придёт .txt‑файлом)\n"
-        "  /report myproj html — html-отчёт (придёт .html‑файлом)\n"
+        "  /report myproj table — табличный отчёт (.txt‑файл)\n"
+        "  /report myproj html — html-отчёт (.html‑файл)\n"
+        "  /report myproj json — json-отчёт с дельтами (.json‑файл)\n"
     )
     await update.message.reply_text(text)
 

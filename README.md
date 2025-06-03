@@ -2,12 +2,14 @@
 
 Лёгкий Telegram‑бот‑агент для фиксации событий *stop‑clock*.
 
-## Установка
+## Установка зависимостей
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.lock
+pip install pyTelegramBotAPI httpx
+
+> Требуемые библиотеки: `pyTelegramBotAPI`, `httpx` и др.
 ```
 
 ## Настройка
@@ -28,18 +30,35 @@ pip install -r requirements.lock
 python bot.py
 ```
 
-Команды:
+> Убедитесь, что у вас установлен Python 3.10+.
+
+## Команды
+
 * `/start` — краткая справка о возможностях бота
 * `/starttask <ID> [YYYY‑mm‑dd HH:MM]` — начать задачу
 * `/stoptask <ID> [YYYY‑mm‑dd HH:MM]` — остановить задачу
 * `/elapsed` — показать отчёт с накопленным временем (в минутах)
 * `/import <project_name>` — импорт плана проекта: приложите CSV или XLSX файл
-* `/report <project_name> [table|html|json]` — отчёт по проекту  
-  *table* → `.txt`‑файл с summary-метриками (кол-во незапущенных задач, просрочки), ascii-графиком статусов, отмечены вехи (*).  
+* `/report <project_name> [table|html|json|text]` — отчёт по проекту  
+  *table/text* → `.txt`‑файл с summary-метриками (кол-во незапущенных задач, просрочки), ascii-графиком статусов, отмечены вехи (*).  
 *html*  → `.html`‑файл с краткой сводкой, SVG-графиком по статусам, ключевыми метриками.  
   *json*  → `.json`‑файл с расчетными полями: дельта, статус, флаги, иерархия задач (через `parent_id`, `is_group`, `level`).  
   ⓘ Milestones (вехи) отмечены звёздочкой *.
-* `/list` — список доступных проектов
+* `/diff <project_name> <base_snapshot_id> <new_snapshot_id>` — сравнение двух срезов плана. Ответ приходит в виде HTML-файла с отчётом различий.
+* `/projects` — список доступных проектов
+
+### Список срезов планов
+
+Показать все срезы (snapshots) для всех проектов:
+```bash
+cfguard snapshots
+```
+
+Показать срезы только для одного проекта:
+```bash
+cfguard snapshots --project <project_name>
+```
+
 * `/reset` — сброс базы данных
 * `/help` — подробная справка по структуре файла
 
@@ -64,6 +83,10 @@ python bot.py
 
 # JSON-отчёт с расчетами (придёт файлом)
 /report DEMO json
+```
+
+```bash
+/diff demo 2024-05-01 2024-06-01 — сравнит срезы плана проекта demo между 1 мая и 1 июня 2024 года.
 ```
 
 # В отчётах показываются ключевые метрики: завершённость, просрочка, статус задач, вехи
@@ -105,6 +128,16 @@ udacha,1,Design,2025-06-01,,,,"",,"",,"in_progress"
 udacha,2,Build,2025-07-15,2025-07-20,,,1,,"",,"done"
 ```
 
-## Лицензия
+## Команда /diff
 
-MIT License.
+Команда `/diff` позволяет получить различия между двумя снапшотами проекта.
+Использование:
+```
+/diff <project> <base_snapshot> <new_snapshot>
+```
+
+В ответ бот отправит HTML-файл с визуальным отчётом различий.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

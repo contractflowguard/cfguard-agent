@@ -1,6 +1,8 @@
 import os, requests, socket
 import logging
 import asyncio
+
+API_BASE_URL = "http://localhost:8000"  # Adjust to match actual CFG API base URL
 logging.basicConfig(level=logging.INFO)
 
 # ───── импорты и состояние ───────────────────────────────────────────
@@ -8,31 +10,38 @@ pending_imports: dict[int, str] = {}
 
 from telegram import Update
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, ContextTypes
+    ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 )
 from datetime import datetime, UTC
 from dateutil.parser import parse as parse_dt
+import tempfile
 
-# ───── конфигурация ───────────────────────────────────────────
-# export TEST_TG_TOKEN (for CI smoke tests) or TG_TOKEN (for production) in environment
+API_URL = os.getenv("API_URL", API_BASE_URL)
 TOKEN = os.environ.get("TEST_TG_TOKEN") or os.environ.get("TG_TOKEN")
 if not TOKEN:
     raise RuntimeError("Bot token is not set. Please set TEST_TG_TOKEN or TG_TOKEN.")
-API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 
-def post_api(endpoint: str, payload: dict) -> bool:
-    """
-    Helper to POST to the backend API.
-    Returns True on HTTP 2xx, False on any exception or non-2xx response.
-    """
+async def handle_diff(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
-        r = requests.post(f"{API_URL}/{endpoint}", json=payload, timeout=1)
-        r.raise_for_status()
-        return True
-    except requests.RequestException:
-        return False
+        args = ctx.args
+        if len(args) != 3:
+            await update.message.reply_text("❗ Пример использования:\n/diff PROJECT BASE_SNAPSHOT NEW_SNAPSHOT")
+            return
+        project, base, new = args
 
-# ───── хэндлеры ────────────────────────────────────────────────
+        url = f"{API_URL}/diff?project={project}&left={base}&right={new}&format=html"
+        response = requests.get(url)
+        if response.status_code == 200:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp:
+                tmp.write(response.content)
+                tmp_path = tmp.name
+            with open(tmp_path, 'rb') as f:
+                await update.message.reply_document(document=f, filename=f"diff_{project}_{base}_vs_{new}.html")
+        else:
+            await update.message.reply_text(f"Ошибка: {response.status_code}\n{response.text}")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка при выполнении diff:\n{e}")
+
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Команды:\n"
@@ -40,10 +49,13 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/stoptask <ID> [YYYY‑mm‑dd HH:MM] — остановить задачу\n"
         "/elapsed — показать отчёт с накопленным временем (минуты)\n"
         "/import <project_name> — инициировать импорт проекта\n"
-        "/report <project_name> [table|html] — получить отчёт по проекту\n"
-        "/list — список доступных проектов\n"
+        "/report <project_name> [table|html|json] — получить отчёт по проекту\n"
+        "/diff <project_name> <base_snapshot> <new_snapshot> — сравнить два среза\n"
+        "/projects — список доступных проектов\n"
         "/reset — сбросить все данные в базе\n"
-        "/help — подробная справка"
+        "/help — подробная справка\n"
+        "/snapshots — list all snapshots for all projects  \n"
+        "/snapshots --project <project_name> — list snapshots for a specific project"
     )
 
 async def starttask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -115,7 +127,6 @@ async def cmd_report(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         resp = requests.get(f"{API_URL}/report", params={"project": project, "format": fmt}, timeout=5)
         print(resp.status_code, resp.text)
         resp.raise_for_status()
-        import tempfile
         if fmt.lower() == "json":
             import json
             records = resp.json().get("records", [])
@@ -152,8 +163,8 @@ async def cmd_report(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except Exception as ex:
         await update.message.reply_text(f"Ошибка отправки отчёта: {ex}")
 
-async def cmd_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    # /list
+async def cmd_projects(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    # /projects
     try:
         resp = requests.get(f"{API_URL}/projects", timeout=5)
         resp.raise_for_status()
@@ -165,6 +176,34 @@ async def cmd_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text)
     except requests.RequestException:
         await update.message.reply_text("Ошибка: не удалось получить список проектов.")
+
+async def cmd_snapshots(update, context):
+    args = context.args
+    if len(args) == 2 and args[0] == "--project":
+        project = args[1]
+        result = requests.get(f"{API_URL}/projects/{project}/snapshots")
+        if result.status_code == 200:
+            snapshots = result.json().get("snapshots", [])
+            message = f"📂 {project}\n"
+            for snap in snapshots:
+                message += f"  • {snap}\n"
+        else:
+            message = f"❌ Failed to fetch snapshots for project '{project}'"
+        return await update.message.reply_text(message)
+    else:
+        result = requests.get(f"{API_URL}/projects")
+        if result.status_code == 200:
+            message = ""
+            projects = result.json().get("projects", [])
+            for project in projects:
+                snap_resp = requests.get(f"{API_URL}/projects/{project}/snapshots")
+                if snap_resp.status_code == 200:
+                    for snap in snap_resp.json().get("snapshots", []):
+                        message += f"📂 {project}\n"
+                        message += f"  • {snap}\n"
+        else:
+            message = "❌ Failed to fetch project list"
+        return await update.message.reply_text(message)
 
 async def cmd_reset(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # /reset
@@ -185,12 +224,14 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "   1. Отправьте `/import <project_name>`\n"
         "   2. Затем пришлите CSV или XLSX файл с задачами\n"
         "/report <project_name> [table|html|json] — получить отчёт по проекту\n"
-        "  • table — .txt‑файл с summary-метриками в начале (просрочки, незапущенные задачи), ascii-графиком статусов, вехи (*)\n"
-        "  • html  — .html‑файл с футером-резюме, SVG-графиком, summary-метриками, вехи (*)\n"
-        "  • json  — .json‑файл с расчетами: дельта, статус, флаги\n"
-        "  ⓘ Вехи (milestones) отмечены звёздочкой *.\n"
-        "В табличном и HTML отчёте теперь отображается иерархия задач (📁 группы, ⭐ вехи), определяемая по parent_id, level, is_group и др.\n"
-        "/list — список доступных проектов\n"
+        "  • table — .txt‑файл с summary-метриками, ascii-графиком и вехами (*)\n"
+        "  • html  — .html‑файл с футером, SVG-графиком и вехами (*)\n"
+        "  • json  — enriched-данные с аналитикой\n"
+        "/diff <project_name> <base_snapshot> <new_snapshot> — сравнение двух срезов\n"
+        "  • Возвращает HTML‑отчёт с различиями задач между срезами\n"
+        "/snapshots — list all snapshots for all projects  \n"
+        "/snapshots --project <project_name> — list snapshots for a specific project\n"
+        "/projects — список доступных проектов\n"
         "/reset — сбросить все данные в базе\n"
         "/help — показать эту справку\n\n"
         "Формат файла (CSV/XLSX): если `parent_id` и `level` не заданы, иерархия определяется по шаблону ID\n"
@@ -208,14 +249,12 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "  • parent_id — ID родительской задачи (если есть)\n"
         "  • is_group — булево, обозначает группу задач (опционально)\n"
         "\n"
-       "Примеры:\n"
+        "Примеры:\n"
         "  /report demo table — табличный отчёт с метриками\n"
         "  /report demo html — html-отчёт с футером\n"
-        "  /report demo json — json-отчёт с аналитикой\n"
+        "  /diff demo v1 v2 — HTML‑отчёт с разницей между v1 и v2"
     )
     await update.message.reply_text(text)
-
-from telegram.ext import MessageHandler, filters
 
 async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -241,6 +280,15 @@ async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         logging.exception("Ошибка при импорте")
         await update.message.reply_text("Ошибка: не удалось импортировать данные на сервере.")
 
+def post_api(endpoint: str, payload: dict) -> bool:
+    try:
+        resp = requests.post(f"{API_URL}/{endpoint}", json=payload, timeout=5)
+        resp.raise_for_status()
+        return True
+    except requests.RequestException as e:
+        logging.error(f"API request failed: {e}")
+        return False
+
 # ───── запуск ─────────────────────────────────────────────────
 def main():
     """Run the Telegram bot with graceful shutdown."""
@@ -254,9 +302,11 @@ def main():
     app.add_handler(CommandHandler("elapsed",     elapsed))
     app.add_handler(CommandHandler("import",   cmd_import))
     app.add_handler(CommandHandler("report",   cmd_report))
-    app.add_handler(CommandHandler("list",     cmd_list))
+    app.add_handler(CommandHandler("projects",     cmd_projects))
+    app.add_handler(CommandHandler("snapshots", cmd_snapshots))
     app.add_handler(CommandHandler("reset",    cmd_reset))
     app.add_handler(CommandHandler("help",     cmd_help))
+    app.add_handler(CommandHandler("diff",     handle_diff))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
     try:

@@ -2,6 +2,9 @@ import os, requests, socket
 import logging
 import asyncio
 
+# For set_snapshot_status_via_api
+import httpx
+
 API_BASE_URL = "http://localhost:8000"  # Adjust to match actual CFG API base URL
 logging.basicConfig(level=logging.INFO)
 
@@ -48,14 +51,14 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/starttask <ID> [YYYY‑mm‑dd HH:MM] — начать задачу\n"
         "/stoptask <ID> [YYYY‑mm‑dd HH:MM] — остановить задачу\n"
         "/elapsed — показать отчёт с накопленным временем (минуты)\n"
-        "/import <project_name> — инициировать импорт проекта\n"
-        "/report <project_name> [table|html|json] — получить отчёт по проекту\n"
-        "/diff <project_name> <base_snapshot> <new_snapshot> — сравнить два среза\n"
+        "/import <project> — инициировать импорт проекта\n"
+        "/report <project> [table|html|json] — получить отчёт по проекту\n"
+        "/diff <project> <base_snapshot> <new_snapshot> — сравнить два среза\n"
         "/projects — список доступных проектов\n"
         "/reset — сбросить все данные в базе\n"
         "/help — подробная справка\n"
         "/snapshots — list all snapshots for all projects  \n"
-        "/snapshots --project <project_name> — list snapshots for a specific project"
+        "/snapshots --project <project> — list snapshots for a specific project"
     )
 
 async def starttask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -108,7 +111,7 @@ async def elapsed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_import(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not ctx.args:
-        await update.message.reply_text("Использование: /import <project_name>")
+        await update.message.reply_text("Использование: /import <project>")
         return
     project = ctx.args[0]
     pending_imports[update.effective_chat.id] = project
@@ -117,9 +120,9 @@ async def cmd_import(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 async def cmd_report(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    # /report <project_name> [table|html]
+    # /report <project> [table|html]
     if not ctx.args:
-        await update.message.reply_text("Использование: /report <project_name> [format]")
+        await update.message.reply_text("Использование: /report <project> [format]")
         return
     project = ctx.args[0]
     fmt = ctx.args[1] if len(ctx.args) > 1 else "table"
@@ -168,11 +171,11 @@ async def cmd_projects(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         resp = requests.get(f"{API_URL}/projects", timeout=5)
         resp.raise_for_status()
-        names = resp.json().get("projects", [])
-        if not names:
+        projects = resp.json().get("projects", [])
+        if not projects:
             text = "Проекты не найдены."
         else:
-            text = "\n".join(names)
+            text = "\n".join(projects)
         await update.message.reply_text(text)
     except requests.RequestException:
         await update.message.reply_text("Ошибка: не удалось получить список проектов.")
@@ -220,17 +223,17 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/starttask <ID> [YYYY‑mm‑dd HH:MM] — начать задачу (по умолчанию сейчас)\n"
         "/stoptask <ID> [YYYY‑mm‑dd HH:MM] — остановить задачу (по умолчанию сейчас)\n"
         "/elapsed — показать отчёт с накопленным временем (минуты)\n"
-        "/import <project_name> — инициировать импорт проекта\n"
-        "   1. Отправьте `/import <project_name>`\n"
+        "/import <project> — инициировать импорт проекта\n"
+        "   1. Отправьте `/import <project>`\n"
         "   2. Затем пришлите CSV или XLSX файл с задачами\n"
-        "/report <project_name> [table|html|json] — получить отчёт по проекту\n"
+        "/report <project> [table|html|json] — получить отчёт по проекту\n"
         "  • table — .txt‑файл с summary-метриками, ascii-графиком и вехами (*)\n"
         "  • html  — .html‑файл с футером, SVG-графиком и вехами (*)\n"
         "  • json  — enriched-данные с аналитикой\n"
-        "/diff <project_name> <base_snapshot> <new_snapshot> — сравнение двух срезов\n"
+        "/diff <project> <base_snapshot> <new_snapshot> — сравнение двух срезов\n"
         "  • Возвращает HTML‑отчёт с различиями задач между срезами\n"
         "/snapshots — list all snapshots for all projects  \n"
-        "/snapshots --project <project_name> — list snapshots for a specific project\n"
+        "/snapshots --project <project> — list snapshots for a specific project\n"
         "/projects — список доступных проектов\n"
         "/reset — сбросить все данные в базе\n"
         "/help — показать эту справку\n\n"
@@ -269,16 +272,45 @@ async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Ошибка: не удалось получить файл")
         return
     files = {"file": (update.message.document.file_name, content)}
-    data = {"name": project}
+    data = {"project": project}
     try:
         resp = requests.post(f"{API_URL}/import", files=files, data=data, timeout=10)
         resp.raise_for_status()
         result = resp.json()
         count = result.get("imported", '?')
+        # Get snapshot_id if present
+        snapshot_id = result.get("snapshot_id")
         await update.message.reply_text(f"✔ Imported {count} tasks into project '{project}'")
+        # Set snapshot status if caption is present and snapshot_id is available
+        if snapshot_id and update.message.caption:
+            status = update.message.caption.strip()
+            set_snapshot_status_via_api(project, snapshot_id, status)
     except requests.RequestException:
         logging.exception("Ошибка при импорте")
         await update.message.reply_text("Ошибка: не удалось импортировать данные на сервере.")
+# Set snapshot status via API
+def set_snapshot_status_via_api(project: str, snapshot_id: str, status: str) -> None:
+    response = httpx.put(f"{API_URL}/snapshot/status", json={
+        "project": project,
+        "snapshot_id": snapshot_id,
+        "status": status
+    })
+    response.raise_for_status()
+
+# Async handler for /setstatus command
+async def cmd_setstatus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        args = context.args
+        if len(args) < 3:
+            await update.message.reply_text("Usage: /setstatus <project> <snapshot_id> <status text>")
+            return
+        project = args[0]
+        snapshot_id = args[1]
+        status = " ".join(args[2:])
+        set_snapshot_status_via_api(project, snapshot_id, status)
+        await update.message.reply_text(f"✅ Status set for {project}/{snapshot_id}")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error setting status: {e}")
 
 def post_api(endpoint: str, payload: dict) -> bool:
     try:
@@ -307,6 +339,7 @@ def main():
     app.add_handler(CommandHandler("reset",    cmd_reset))
     app.add_handler(CommandHandler("help",     cmd_help))
     app.add_handler(CommandHandler("diff",     handle_diff))
+    app.add_handler(CommandHandler("setstatus", cmd_setstatus))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
     try:

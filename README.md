@@ -38,13 +38,13 @@ python bot.py
 * `/starttask <ID> [YYYY‑mm‑dd HH:MM]` — начать задачу
 * `/stoptask <ID> [YYYY‑mm‑dd HH:MM]` — остановить задачу
 * `/elapsed` — показать отчёт с накопленным временем (в минутах)
-* `/import <project_name>` — импорт плана проекта: приложите CSV или XLSX файл
-* `/report <project_name> [table|html|json|text]` — отчёт по проекту  
+* `/import <project>` — импорт плана проекта: приложите CSV или XLSX файл
+* `/report <project> [table|html|json|text]` — отчёт по проекту  
   *table/text* → `.txt`‑файл с summary-метриками (кол-во незапущенных задач, просрочки), ascii-графиком статусов, отмечены вехи (*).  
 *html*  → `.html`‑файл с краткой сводкой, SVG-графиком по статусам, ключевыми метриками.  
   *json*  → `.json`‑файл с расчетными полями: дельта, статус, флаги, иерархия задач (через `parent_id`, `is_group`, `level`).  
   ⓘ Milestones (вехи) отмечены звёздочкой *.
-* `/diff <project_name> <base_snapshot_id> <new_snapshot_id>` — сравнение двух срезов плана. Ответ приходит в виде HTML-файла с отчётом различий.
+* `/diff <project> <base_snapshot_id> <new_snapshot_id>` — сравнение двух срезов плана. Ответ приходит в виде HTML-файла с отчётом различий.
 * `/projects` — список доступных проектов
 
 ### Список срезов планов
@@ -56,7 +56,7 @@ cfguard snapshots
 
 Показать срезы только для одного проекта:
 ```bash
-cfguard snapshots --project <project_name>
+cfguard snapshots --project <project>
 ```
 
 * `/reset` — сброс базы данных
@@ -92,7 +92,7 @@ cfguard snapshots --project <project_name>
 # В отчётах показываются ключевые метрики: завершённость, просрочка, статус задач, вехи
 
 Бот теперь поддерживает многошаговый импорт:
-1. Отправьте команду `/import <project_name>`
+1. Отправьте команду `/import <project>`
 2. Затем в отдельном сообщении приложите CSV или XLSX файл с колонками:
    `project`, `task_id`, `summary`, `planned_deadline`, `actual_completion_date`, `duration_days`, `deps`, `assignee`, `description`, `result`, `status`.
 
